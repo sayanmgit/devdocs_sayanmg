@@ -1,0 +1,51 @@
+name: Sync upstream devdocs (open PR)
+
+on:
+  schedule:
+    - cron: '0 2 * * *'     # daily at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-pr:
+    runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: https://github.com/freeCodeCamp/devdocs.git
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get timestamp
+        run: echo "SYNC_TS=$(date -u +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Set up Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream ${{ env.UPSTREAM_REPO }}
+
+      - name: Fetch upstream
+        run: git fetch upstream
+
+      - name: Create branch with upstream changes
+        run: |
+          BR=upstream-sync-${SYNC_TS}
+          git checkout -b $BR
+          git merge --no-edit upstream/main || (git merge --abort && echo "Merge conflict — aborting" && exit 1)
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} $BR
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Sync from upstream freeCodeCamp/devdocs"
+          branch: upstream-sync-${{ env.SYNC_TS }}
+          title: "Sync: upstream devdocs @ ${{ env.SYNC_TS }}"
+          body: |
+            Automatic sync from freeCodeCamp/devdocs performed by GitHub Actions. Review the changes and merge if OK. base: main labels: upstream-sync
